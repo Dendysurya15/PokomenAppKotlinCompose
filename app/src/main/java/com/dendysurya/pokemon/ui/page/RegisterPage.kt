@@ -12,6 +12,9 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -22,6 +25,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
@@ -51,11 +55,7 @@ import com.dendysurya.pokemon.ui.navigation.Routes
 import com.dendysurya.pokemon.ui.theme.PokemonTheme
 import com.dendysurya.pokemon.viewmodel.MainViewModel
 import com.dendysurya.pokemon.viewmodel.RegisterUiState
-
-// Email validation helper function
-private fun isValidEmail(email: String): Boolean {
-    return android.util.Patterns.EMAIL_ADDRESS.matcher(email).matches()
-}
+import kotlinx.coroutines.delay
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -70,9 +70,69 @@ fun RegisterPage(
     var passwordVisible by remember { mutableStateOf(false) }
     var confirmPasswordVisible by remember { mutableStateOf(false) }
 
+    // Track validation errors to display them inline
+    var usernameError by remember { mutableStateOf<String?>(null) }
+    var emailError by remember { mutableStateOf<String?>(null) }
+    var passwordError by remember { mutableStateOf<String?>(null) }
+    var confirmPasswordError by remember { mutableStateOf<String?>(null) }
+
+    // Add separate interaction flags for each field
+    var usernameInteracted by remember { mutableStateOf(false) }
+    var emailInteracted by remember { mutableStateOf(false) }
+    var passwordInteracted by remember { mutableStateOf(false) }
+    var confirmPasswordInteracted by remember { mutableStateOf(false) }
+
+    // Validate fields on change, but only show errors if the field has been interacted with
+    LaunchedEffect(registerState) {
+        // Username validation
+        usernameError = if (usernameInteracted && registerState.username.isBlank()) {
+            "Username is required"
+        } else {
+            null
+        }
+
+        // Email validation
+        emailError = if (emailInteracted) {
+            when {
+                registerState.email.isBlank() -> "Email is required"
+                !isValidEmail(registerState.email) -> "Please enter a valid email"
+                else -> null
+            }
+        } else {
+            null
+        }
+
+        // Password validation
+        passwordError = if (passwordInteracted) {
+            when {
+                registerState.password.isBlank() -> "Password is required"
+                registerState.password.length < 6 -> "Password must be at least 6 characters"
+                else -> null
+            }
+        } else {
+            null
+        }
+
+        // Confirm password validation
+        confirmPasswordError = if (confirmPasswordInteracted) {
+            when {
+                registerState.confirmPassword.isBlank() -> "Please confirm your password"
+                registerState.confirmPassword != registerState.password -> "Passwords don't match"
+                else -> null
+            }
+        } else {
+            null
+        }
+    }
+
     // Reset the form when navigating to this screen
     LaunchedEffect(Unit) {
         viewModel.resetRegisterForm()
+        // Reset interaction flags
+        usernameInteracted = false
+        emailInteracted = false
+        passwordInteracted = false
+        confirmPasswordInteracted = false
     }
 
     // Show error message in snackbar if registration fails
@@ -82,21 +142,33 @@ fun RegisterPage(
         }
     }
 
-    // Navigate to login when registration succeeds
+    var countdown by remember { mutableStateOf(3) }
+
     LaunchedEffect(registerState.isSuccess) {
         if (registerState.isSuccess) {
+
+
+            snackbarHostState.showSnackbar("Account created successfully! Redirecting...")
+
+                delay(1500)
+
             navController.navigate(Routes.LoginPage) {
                 popUpTo(Routes.RegisterPage) { inclusive = true }
             }
         }
     }
 
+// In your UI somewhere:
+    if (registerState.isSuccess) {
+        Text(text = "Redirecting in $countdown...")
+    }
+
+
+
     Scaffold(
         topBar = {
             TopAppBar(
                 title = { Text("Create Account") }
-                // Note: We're removing the navigationIcon temporarily
-                // since we don't have the icons dependency
             )
         },
         snackbarHost = { SnackbarHost(snackbarHostState) }
@@ -143,10 +215,23 @@ fun RegisterPage(
                     // Username Field
                     OutlinedTextField(
                         value = registerState.username,
-                        onValueChange = { viewModel.updateRegisterForm(username = it) },
+                        onValueChange = {
+                            usernameInteracted = true
+                            viewModel.updateRegisterForm(username = it)
+                        },
                         label = { Text("Username") },
                         singleLine = true,
-                        isError = registerState.errorMessage != null && registerState.username.isBlank(),
+                        isError = usernameError != null,
+                        supportingText = {
+                            if (usernameInteracted) {
+                                usernameError?.let {
+                                    Text(
+                                        text = it,
+                                        color = MaterialTheme.colorScheme.error
+                                    )
+                                }
+                            }
+                        },
                         keyboardOptions = KeyboardOptions(
                             keyboardType = KeyboardType.Text,
                             imeAction = ImeAction.Next
@@ -157,16 +242,28 @@ fun RegisterPage(
                         modifier = Modifier.fillMaxWidth()
                     )
 
-                    Spacer(modifier = Modifier.height(16.dp))
+                    Spacer(modifier = Modifier.height(8.dp))
 
                     // Email Field
                     OutlinedTextField(
                         value = registerState.email,
-                        onValueChange = { viewModel.updateRegisterForm(email = it) },
+                        onValueChange = {
+                            emailInteracted = true
+                            viewModel.updateRegisterForm(email = it)
+                        },
                         label = { Text("Email") },
                         singleLine = true,
-                        isError = registerState.errorMessage != null &&
-                                (registerState.email.isBlank() || !isValidEmail(registerState.email)),
+                        isError = emailError != null,
+                        supportingText = {
+                            if (emailInteracted) {
+                                emailError?.let {
+                                    Text(
+                                        text = it,
+                                        color = MaterialTheme.colorScheme.error
+                                    )
+                                }
+                            }
+                        },
                         keyboardOptions = KeyboardOptions(
                             keyboardType = KeyboardType.Email,
                             imeAction = ImeAction.Next
@@ -177,16 +274,28 @@ fun RegisterPage(
                         modifier = Modifier.fillMaxWidth()
                     )
 
-                    Spacer(modifier = Modifier.height(16.dp))
+                    Spacer(modifier = Modifier.height(8.dp))
 
                     // Password Field
                     OutlinedTextField(
                         value = registerState.password,
-                        onValueChange = { viewModel.updateRegisterForm(password = it) },
+                        onValueChange = {
+                            passwordInteracted = true
+                            viewModel.updateRegisterForm(password = it)
+                        },
                         label = { Text("Password") },
                         singleLine = true,
-                        isError = registerState.errorMessage != null &&
-                                (registerState.password.isBlank() || registerState.password.length < 6),
+                        isError = passwordError != null,
+                        supportingText = {
+                            if (passwordInteracted) {
+                                passwordError?.let {
+                                    Text(
+                                        text = it,
+                                        color = MaterialTheme.colorScheme.error
+                                    )
+                                } ?: Text("Password must be at least 6 characters")
+                            }
+                        },
                         visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
                         keyboardOptions = KeyboardOptions(
                             keyboardType = KeyboardType.Password,
@@ -195,32 +304,39 @@ fun RegisterPage(
                         keyboardActions = KeyboardActions(
                             onNext = { focusManager.moveFocus(FocusDirection.Down) }
                         ),
-                        // Using text instead of icon for password visibility
                         trailingIcon = {
-                            TextButton(
-                                onClick = { passwordVisible = !passwordVisible },
-                                modifier = Modifier.padding(4.dp)
-                            ) {
-                                Text(
-                                    text = if (passwordVisible) "Hide" else "Show",
-                                    style = MaterialTheme.typography.bodySmall
+                            IconButton(onClick = { passwordVisible = !passwordVisible }) {
+                                Icon(
+                                    imageVector = if (passwordVisible) Icons.Default.Visibility else Icons.Default.VisibilityOff,
+                                    contentDescription = if (passwordVisible) "Hide password" else "Show password"
                                 )
                             }
                         },
                         modifier = Modifier.fillMaxWidth()
                     )
 
-                    Spacer(modifier = Modifier.height(16.dp))
+                    Spacer(modifier = Modifier.height(8.dp))
 
                     // Confirm Password Field
                     OutlinedTextField(
                         value = registerState.confirmPassword,
-                        onValueChange = { viewModel.updateRegisterForm(confirmPassword = it) },
+                        onValueChange = {
+                            confirmPasswordInteracted = true
+                            viewModel.updateRegisterForm(confirmPassword = it)
+                        },
                         label = { Text("Confirm Password") },
                         singleLine = true,
-                        isError = registerState.errorMessage != null &&
-                                (registerState.confirmPassword.isBlank() ||
-                                        registerState.password != registerState.confirmPassword),
+                        isError = confirmPasswordError != null,
+                        supportingText = {
+                            if (confirmPasswordInteracted) {
+                                confirmPasswordError?.let {
+                                    Text(
+                                        text = it,
+                                        color = MaterialTheme.colorScheme.error
+                                    )
+                                }
+                            }
+                        },
                         visualTransformation = if (confirmPasswordVisible) VisualTransformation.None else PasswordVisualTransformation(),
                         keyboardOptions = KeyboardOptions(
                             keyboardType = KeyboardType.Password,
@@ -229,20 +345,23 @@ fun RegisterPage(
                         keyboardActions = KeyboardActions(
                             onDone = {
                                 focusManager.clearFocus()
+
+                                // Set all interaction flags to true to validate all fields
+                                usernameInteracted = true
+                                emailInteracted = true
+                                passwordInteracted = true
+                                confirmPasswordInteracted = true
+
                                 if (isFormValid(registerState)) {
                                     viewModel.register()
                                 }
                             }
                         ),
-                        // Using text instead of icon for password visibility
                         trailingIcon = {
-                            TextButton(
-                                onClick = { confirmPasswordVisible = !confirmPasswordVisible },
-                                modifier = Modifier.padding(4.dp)
-                            ) {
-                                Text(
-                                    text = if (confirmPasswordVisible) "Hide" else "Show",
-                                    style = MaterialTheme.typography.bodySmall
+                            IconButton(onClick = { confirmPasswordVisible = !confirmPasswordVisible }) {
+                                Icon(
+                                    imageVector = if (confirmPasswordVisible) Icons.Default.Visibility else Icons.Default.VisibilityOff,
+                                    contentDescription = if (confirmPasswordVisible) "Hide password" else "Show password"
                                 )
                             }
                         },
@@ -253,8 +372,18 @@ fun RegisterPage(
 
                     // Register Button
                     Button(
-                        onClick = { viewModel.register() },
-                        enabled = !registerState.isLoading && isFormValid(registerState),
+                        onClick = {
+                            // Set all interaction flags to true to validate all fields
+                            usernameInteracted = true
+                            emailInteracted = true
+                            passwordInteracted = true
+                            confirmPasswordInteracted = true
+
+                            if (isFormValid(registerState)) {
+                                viewModel.register()
+                            }
+                        },
+                        enabled = !registerState.isLoading,
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         if (registerState.isLoading) {
@@ -290,4 +419,7 @@ private fun isFormValid(state: RegisterUiState): Boolean {
             state.confirmPassword == state.password
 }
 
-
+// Email validation helper function
+private fun isValidEmail(email: String): Boolean {
+    return android.util.Patterns.EMAIL_ADDRESS.matcher(email).matches()
+}

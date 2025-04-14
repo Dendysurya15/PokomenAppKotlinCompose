@@ -1,5 +1,11 @@
 package com.dendysurya.pokemon.ui.page
 
+import android.annotation.SuppressLint
+import android.content.Context
+import android.net.ConnectivityManager
+import android.net.Network
+import android.net.NetworkRequest
+import android.net.NetworkCapabilities
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -23,8 +29,13 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SearchBar
+import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -34,15 +45,19 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
 import com.dendysurya.pokemon.ui.component.CardItem
 import com.dendysurya.pokemon.ui.component.CardItemDetail
+import com.dendysurya.pokemon.ui.component.SearchBarItem
 import com.dendysurya.pokemon.ui.navigation.Routes
 import com.dendysurya.pokemon.viewmodel.MainViewModel
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filter
+import org.junit.runner.manipulation.Ordering
 
+@SuppressLint("RememberReturnType")
 @Composable
 fun HomePage(
     viewModel: MainViewModel,
@@ -50,9 +65,54 @@ fun HomePage(
 ) {
     var selectedTab by remember { mutableStateOf(0) }
     val tabs = listOf("Home", "Profile")
+    val context = LocalContext.current
 
+    // State to track connectivity
+    var isOnline by remember { mutableStateOf(true) }
+    val snackbarHostState = remember { SnackbarHostState() }
+
+    // Check network connectivity
+    DisposableEffect(Unit) {
+        val connectivityManager = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+
+        val networkCallback = object : ConnectivityManager.NetworkCallback() {
+            override fun onAvailable(network: Network) {
+                isOnline = true
+            }
+
+            override fun onLost(network: Network) {
+                isOnline = false
+            }
+        }
+
+        val networkRequest = NetworkRequest.Builder()
+            .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+            .build()
+
+        connectivityManager.registerNetworkCallback(networkRequest, networkCallback)
+
+        // Initial check
+        isOnline = connectivityManager.activeNetwork?.let { network ->
+            connectivityManager.getNetworkCapabilities(network)
+                ?.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+        } ?: false
+
+        onDispose {
+            connectivityManager.unregisterNetworkCallback(networkCallback)
+        }
+    }
+
+    LaunchedEffect(isOnline) {
+        if (!isOnline) {
+            snackbarHostState.showSnackbar(
+                message = "You're offline. Some features may be unavailable.",
+                duration = SnackbarDuration.Indefinite
+            )
+        }
+    }
 
     Scaffold(
+        snackbarHost = { SnackbarHost(hostState = snackbarHostState) },
         bottomBar = {
             NavigationBar {
                 tabs.forEachIndexed { index, title ->
@@ -80,15 +140,15 @@ fun HomePage(
                 .padding(paddingValues)
         ) {
             when (selectedTab) {
-                0 -> HomeContent(viewModel)
-                1 -> ProfileContent(viewModel, navController)
+                0 -> HomeContent(viewModel, isOnline)
+                1 -> ProfileContent(viewModel, navController, isOnline)
             }
         }
     }
 }
 
 @Composable
-fun HomeContent(viewModel: MainViewModel) {
+fun HomeContent(viewModel: MainViewModel, isBoolean: Boolean) {
     val pokemonList by viewModel.filteredPokemonList.collectAsState(initial = emptyList())
     val listState = rememberLazyListState()
     val pokemonDetailState by viewModel.pokemonDetailState.collectAsState(initial = null)
@@ -116,12 +176,12 @@ fun HomeContent(viewModel: MainViewModel) {
 
     Box(modifier = Modifier.fillMaxSize()) {
         Column(modifier = Modifier.fillMaxSize()) {
-            // Search bar - uncomment when ready to use
-            // PokemonSearchBar(
-            //     query = searchQuery,
-            //     onQueryChange = { viewModel.updateSearchQuery(it) },
-            //     modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
-            // )
+
+            SearchBarItem(
+                 query = searchQuery,
+                 onQueryChange = { viewModel.updateSearchQuery(it) },
+                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+             )
 
             // Pokemon list
             if (pokemonList.isEmpty() && loadingState.isLoading) {
@@ -185,7 +245,7 @@ fun HomeContent(viewModel: MainViewModel) {
 }
 
 @Composable
-fun ProfileContent(viewModel: MainViewModel, navController: NavController) {
+fun ProfileContent(viewModel: MainViewModel, navController: NavController, isBoolean: Boolean) {
     Column(
         modifier = Modifier
             .fillMaxSize()
