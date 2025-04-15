@@ -22,7 +22,9 @@ import androidx.compose.material.icons.Icons
 import com.dendysurya.pokemon.model.PokemonListState
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -46,6 +48,7 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.colorResource
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
 import com.dendysurya.pokemon.ui.component.CardItem
@@ -56,7 +59,7 @@ import com.dendysurya.pokemon.viewmodel.MainViewModel
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filter
 import org.junit.runner.manipulation.Ordering
-
+import com.dendysurya.pokemon.R
 @SuppressLint("RememberReturnType")
 @Composable
 fun HomePage(
@@ -70,6 +73,9 @@ fun HomePage(
     // State to track connectivity
     var isOnline by remember { mutableStateOf(true) }
     val snackbarHostState = remember { SnackbarHostState() }
+
+    // State to track if coming from login
+    val isFirstLoad = remember { mutableStateOf(true) }
 
     // Check network connectivity
     DisposableEffect(Unit) {
@@ -99,6 +105,29 @@ fun HomePage(
 
         onDispose {
             connectivityManager.unregisterNetworkCallback(networkCallback)
+        }
+    }
+
+    // Get user profile data
+    val userState by viewModel.userProfileState.collectAsState()
+
+    // Pre-load user profile
+    LaunchedEffect(Unit) {
+        viewModel.loadUserProfile()
+    }
+
+    // Show welcome message only on first load
+    LaunchedEffect(userState.userData, isFirstLoad.value) {
+        if (isFirstLoad.value && userState.userData != null) {
+            // Show welcome message
+            val welcomeMessage = "Welcome, ${userState.userData!!.name}!"
+            snackbarHostState.showSnackbar(
+                message = welcomeMessage,
+                duration = SnackbarDuration.Short
+            )
+
+            // Reset flag so message only shows once
+            isFirstLoad.value = false
         }
     }
 
@@ -178,10 +207,10 @@ fun HomeContent(viewModel: MainViewModel, isBoolean: Boolean) {
         Column(modifier = Modifier.fillMaxSize()) {
 
             SearchBarItem(
-                 query = searchQuery,
-                 onQueryChange = { viewModel.updateSearchQuery(it) },
-                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
-             )
+                query = searchQuery,
+                onQueryChange = { viewModel.updateSearchQuery(it) },
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+            )
 
             // Pokemon list
             if (pokemonList.isEmpty() && loadingState.isLoading) {
@@ -246,6 +275,9 @@ fun HomeContent(viewModel: MainViewModel, isBoolean: Boolean) {
 
 @Composable
 fun ProfileContent(viewModel: MainViewModel, navController: NavController, isBoolean: Boolean) {
+    // State for tracking if the logout confirmation dialog should be shown
+    var showLogoutConfirmation by remember { mutableStateOf(false) }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -276,16 +308,47 @@ fun ProfileContent(viewModel: MainViewModel, navController: NavController, isBoo
 
                 Button(
                     onClick = {
-                        viewModel.logout()
-                        navController.navigate(Routes.LoginPage) {
-                            popUpTo(Routes.HomePage) { inclusive = true }
-                        }
+                        // Show confirmation dialog instead of logging out immediately
+                        showLogoutConfirmation = true
                     },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = colorResource(id = R.color.red) // Use your custom color
+                    ),
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Text("Logout")
                 }
             }
         }
+    }
+
+    // Logout confirmation dialog
+    if (showLogoutConfirmation) {
+        AlertDialog(
+            onDismissRequest = { showLogoutConfirmation = false },
+            title = { Text("Log Out?") },
+            text = { Text("Are you sure you want to log out?") },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        // Perform logout when confirmed
+                        viewModel.logout()
+                        navController.navigate(Routes.LoginPage) {
+                            popUpTo(Routes.HomePage) { inclusive = true }
+                        }
+                        showLogoutConfirmation = false
+                    }
+                ) {
+                    Text("Log Out")
+                }
+            },
+            dismissButton = {
+                Button(
+                    onClick = { showLogoutConfirmation = false }
+                ) {
+                    Text("Cancel")
+                }
+            }
+        )
     }
 }
